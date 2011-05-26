@@ -338,7 +338,25 @@ class TestRakeApplication < Rake::TestCase
       rake_capture_io(out, err) { @app.run }
     }
     err.rewind
-    refute_match(/See full trace/, err.read)
+    err_s = err.read
+    refute_match(/See full trace/, err_s)
+    assert_match(/application.rb/, err_s)
+  ensure
+    ARGV.clear
+  end
+
+  def test_bad_run_with_cron
+    @app.intern(Rake::Task, "default").enhance { fail }
+    ARGV.clear
+    ARGV << '-f' << '-s' << '-c'
+    out, err = StringIO.new, StringIO.new
+    assert_raises(SystemExit) {
+      rake_capture_io(out, err) { @app.run }
+    }
+    err.rewind
+    err_s = err.read
+    refute_match(/See full trace/, err_s)
+    assert_match(/application.rb/, err_s)
   ensure
     ARGV.clear
   end
