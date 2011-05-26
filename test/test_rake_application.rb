@@ -319,10 +319,12 @@ class TestRakeApplication < Rake::TestCase
     @app.intern(Rake::Task, "default").enhance { fail }
     ARGV.clear
     ARGV << '-f' << '-s' <<  '--rakelib=""'
+    out, err = StringIO.new, StringIO.new
     assert_raises(SystemExit) {
-      _, err = capture_io { @app.run }
-      assert_match(/see full trace/, err)
+      rake_capture_io(out, err) { @app.run }
     }
+    err.rewind
+    assert_match(/See full trace/, err.read)
   ensure
     ARGV.clear
   end
@@ -331,10 +333,12 @@ class TestRakeApplication < Rake::TestCase
     @app.intern(Rake::Task, "default").enhance { fail }
     ARGV.clear
     ARGV << '-f' << '-s' << '-t'
+    out, err = StringIO.new, StringIO.new
     assert_raises(SystemExit) {
-      _, err = capture_io { @app.run }
-      refute_match(/see full trace/, err)
+      rake_capture_io(out, err) { @app.run }
     }
+    err.rewind
+    refute_match(/See full trace/, err.read)
   ensure
     ARGV.clear
   end
