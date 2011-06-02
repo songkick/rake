@@ -6,5 +6,5 @@ module Rake
       BUILD = 0,
     ]
   end
-  VERSION = Version::NUMBERS.join('.') + ".1"
+  VERSION = Version::NUMBERS.join('.') + ".2"
 end
