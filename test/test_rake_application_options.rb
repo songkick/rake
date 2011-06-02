@@ -239,6 +239,7 @@ class TestRakeApplicationOptions < Rake::TestCase
       flags('--cron', '-c') do |opts|
         assert opts.cron
         assert opts.silent
+        assert opts.ignore_deprecate
       end
     end
   end

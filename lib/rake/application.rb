@@ -388,10 +388,11 @@ module Rake
             Rake.verbose(true)
           }
         ],
-        ['--cron', '-c', "Like --silent, but full backtraces are printed on errors (useful for cronjobs)",
+        ['--cron', '-c', "Like -s and -X, but full backtraces are printed on errors (useful for cronjobs)",
           lambda { |value|
             options.cron   = true
             options.silent = true
+            options.ignore_deprecate = true
           }
         ],
         ['--verbose', '-v', "Log message to standard output.",
