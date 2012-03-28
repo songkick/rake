@@ -5,5 +5,5 @@ module Rake
     MAJOR, MINOR, BUILD = VERSION.split '.'
     NUMBERS = [ MAJOR, MINOR, BUILD ]
   end
-  VERSION = Version::NUMBERS.join('.') + ".1"
+  VERSION.replace(VERSION + ".1")
 end
