@@ -19,6 +19,14 @@ class TestRakeTaskManager < Rake::TestCase
     assert_equal @tm, t.application
   end
 
+  def test_index
+    e = assert_raises RuntimeError do
+      @tm['bad']
+    end
+
+    assert_equal "Don't know how to build task 'bad'", e.message
+  end
+
   def test_name_lookup
     t = @tm.define_task(Rake::Task, :t)
     assert_equal t, @tm[:t]
@@ -46,6 +54,7 @@ class TestRakeTaskManager < Rake::TestCase
       t = @tm.define_task(Rake::FileTask, "fn")
       assert_equal "fn", t.name
     end
+
     assert_equal ["fn"], @tm.tasks.collect { |t| t.name }
   end
 
@@ -58,7 +67,10 @@ class TestRakeTaskManager < Rake::TestCase
   end
 
   def test_name_lookup_with_implicit_file_tasks
+    FileUtils.touch 'README.rdoc'
+
     t = @tm["README.rdoc"]
+
     assert_equal "README.rdoc", t.name
     assert Rake::FileTask === t
   end

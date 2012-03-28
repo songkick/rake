@@ -4,47 +4,41 @@ require 'stringio'
 
 class TestRakeFileUtils < Rake::TestCase
 
-  def setup
-    super
-
-    File.chmod(0750, "test/shellcommand.rb")
-  end
-
   def teardown
-    File.chmod(0755, "test/shellcommand.rb")
-    FileUtils.rm_rf("testdata")
     FileUtils::LN_SUPPORTED[0] = true
+    RakeFileUtils.verbose_flag = Rake::FileUtilsExt::DEFAULT
 
     super
   end
 
   def test_rm_one_file
-    create_file("testdata/a")
-    FileUtils.rm_rf "testdata/a"
-    assert ! File.exist?("testdata/a")
+    create_file("a")
+    FileUtils.rm_rf "a"
+    refute File.exist?("a")
   end
 
   def test_rm_two_files
-    create_file("testdata/a")
-    create_file("testdata/b")
-    FileUtils.rm_rf ["testdata/a", "testdata/b"]
-    assert ! File.exist?("testdata/a")
-    assert ! File.exist?("testdata/b")
+    create_file("a")
+    create_file("b")
+    FileUtils.rm_rf ["a", "b"]
+    refute File.exist?("a")
+    refute File.exist?("b")
   end
 
   def test_rm_filelist
-    list = Rake::FileList.new << "testdata/a" << "testdata/b"
+    list = Rake::FileList.new << "a" << "b"
     list.each { |fn| create_file(fn) }
     FileUtils.rm_r list
-    assert ! File.exist?("testdata/a")
-    assert ! File.exist?("testdata/b")
+    refute File.exist?("a")
+    refute File.exist?("b")
   end
 
   def test_ln
-    create_dir("testdata")
-    open("testdata/a", "w") { |f| f.puts "TEST_LN" }
-    Rake::FileUtilsExt.safe_ln("testdata/a", "testdata/b", :verbose => false)
-    assert_equal "TEST_LN\n", open("testdata/b") { |f| f.read }
+    open("a", "w") { |f| f.puts "TEST_LN" }
+
+    Rake::FileUtilsExt.safe_ln("a", "b", :verbose => false)
+
+    assert_equal "TEST_LN\n", File.read('b')
   end
 
   class BadLink
@@ -107,9 +101,13 @@ class TestRakeFileUtils < Rake::TestCase
   end
 
   def test_file_utils_methods_are_available_at_top_level
-    create_file("testdata/a")
-    rm_rf "testdata/a"
-    assert ! File.exist?("testdata/a")
+    create_file("a")
+
+    capture_io do
+      rm_rf "a"
+    end
+
+    refute File.exist?("a")
   end
 
   def test_fileutils_methods_dont_leak
@@ -119,56 +117,49 @@ class TestRakeFileUtils < Rake::TestCase
   end
 
   def test_sh
-    verbose(false) { sh %{#{FileUtils::RUBY} test/shellcommand.rb} }
+    shellcommand
+
+    verbose(false) { sh %{#{Rake::TestCase::RUBY} shellcommand.rb} }
     assert true, "should not fail"
   end
 
-  # If the :sh method is invoked directly from a test unit instance
-  # (under mini/test), the mini/test version of fail is invoked rather
-  # than the kernel version of fail. So we run :sh from within a
-  # non-test class to avoid the problem.
-  class Sh
-    include FileUtils
-    def run(*args)
-      sh(*args)
-    end
-    def self.run(*args)
-      new.run(*args)
-    end
-    def self.ruby(*args)
-      Sh.run(RUBY, *args)
-    end
-  end
-
   def test_sh_with_a_single_string_argument
+    check_expansion
+
     ENV['RAKE_TEST_SH'] = 'someval'
     verbose(false) {
-      sh %{#{FileUtils::RUBY} test/check_expansion.rb #{env_var} someval}
+      sh %{#{RUBY} check_expansion.rb #{env_var} someval}
     }
   end
 
   def test_sh_with_multiple_arguments
+    check_no_expansion
     ENV['RAKE_TEST_SH'] = 'someval'
+
     verbose(false) {
-      Sh.ruby 'test/check_no_expansion.rb', env_var, 'someval'
+      sh RUBY, 'check_no_expansion.rb', env_var, 'someval'
     }
   end
 
   def test_sh_failure
+    shellcommand
+
     assert_raises(RuntimeError) {
-      verbose(false) { Sh.run %{#{FileUtils::RUBY} test/shellcommand.rb 1} }
+      verbose(false) { sh %{#{RUBY} shellcommand.rb 1} }
     }
   end
 
   def test_sh_special_handling
+    shellcommand
+
     count = 0
     verbose(false) {
-      sh(%{#{FileUtils::RUBY} test/shellcommand.rb}) do |ok, res|
+      sh(%{#{RUBY} shellcommand.rb}) do |ok, res|
         assert(ok)
         assert_equal 0, res.exitstatus
         count += 1
       end
-      sh(%{#{FileUtils::RUBY} test/shellcommand.rb 1}) do |ok, res|
+      sh(%{#{RUBY} shellcommand.rb 1}) do |ok, res|
         assert(!ok)
         assert_equal 1, res.exitstatus
         count += 1
@@ -178,46 +169,75 @@ class TestRakeFileUtils < Rake::TestCase
   end
 
   def test_sh_noop
-    verbose(false) { sh %{test/shellcommand.rb 1}, :noop=>true }
+    shellcommand
+
+    verbose(false) { sh %{shellcommand.rb 1}, :noop=>true }
     assert true, "should not fail"
   end
 
   def test_sh_bad_option
+    shellcommand
+
     ex = assert_raises(ArgumentError) {
-      verbose(false) { sh %{test/shellcommand.rb}, :bad_option=>true }
+      verbose(false) { sh %{shellcommand.rb}, :bad_option=>true }
     }
     assert_match(/bad_option/, ex.message)
   end
 
   def test_sh_verbose
-    out = redirect_stderr {
+    shellcommand
+
+    _, err = capture_io do
       verbose(true) {
-        sh %{test/shellcommand.rb}, :noop=>true
+        sh %{shellcommand.rb}, :noop=>true
       }
-    }
-    assert_match(/^test\/shellcommand\.rb$/, out)
+    end
+
+    assert_equal "shellcommand.rb\n", err
   end
 
-  def test_sh_no_verbose
-    out = redirect_stderr {
+  def test_sh_verbose_false
+    shellcommand
+
+    _, err = capture_io do
       verbose(false) {
-        sh %{test/shellcommand.rb}, :noop=>true
+        sh %{shellcommand.rb}, :noop=>true
       }
-    }
-    assert_equal '', out
+    end
+
+    assert_equal '', err
+  end
+
+  def test_sh_verbose_flag_nil
+    shellcommand
+
+    RakeFileUtils.verbose_flag = nil
+
+    assert_silent do
+      sh %{shellcommand.rb}, :noop=>true
+    end
   end
 
   def test_ruby_with_a_single_string_argument
+    check_expansion
+
     ENV['RAKE_TEST_SH'] = 'someval'
+
     verbose(false) {
-      ruby %{test/check_expansion.rb #{env_var} someval}
+      replace_ruby {
+        ruby %{check_expansion.rb #{env_var} someval}
+      }
     }
   end
 
   def test_ruby_with_multiple_arguments
+    check_no_expansion
+
     ENV['RAKE_TEST_SH'] = 'someval'
     verbose(false) {
-      ruby 'test/check_no_expansion.rb', env_var, 'someval'
+      replace_ruby {
+        ruby 'check_no_expansion.rb', env_var, 'someval'
+      }
     }
   end
 
@@ -230,23 +250,56 @@ class TestRakeFileUtils < Rake::TestCase
     assert_equal ['..', 'a', 'b'], Rake::FileUtilsExt.split_all('../a/b')
   end
 
-  private
-
-  def redirect_stderr
-    old_err = $stderr
-    $stderr = StringIO.new
-    yield
-    $stderr.string
-  ensure
-    $stderr = old_err
+  def command name, text
+    open name, 'w', 0750 do |io|
+      io << text
+    end
   end
 
-  def windows?
-    ! File::ALT_SEPARATOR.nil?
+  def check_no_expansion
+    command 'check_no_expansion.rb', <<-CHECK_EXPANSION
+if ARGV[0] != ARGV[1]
+  exit 0
+else
+  exit 1
+end
+    CHECK_EXPANSION
+  end
+
+  def check_expansion
+    command 'check_expansion.rb', <<-CHECK_EXPANSION
+if ARGV[0] != ARGV[1]
+  exit 1
+else
+  exit 0
+end
+    CHECK_EXPANSION
+  end
+
+  def replace_ruby
+    ruby = FileUtils::RUBY
+    FileUtils.send :remove_const, :RUBY
+    FileUtils.const_set :RUBY, RUBY
+    yield
+  ensure
+    FileUtils.send :remove_const, :RUBY
+    FileUtils.const_set:RUBY, ruby
+  end
+
+  def shellcommand
+    command 'shellcommand.rb', <<-SHELLCOMMAND
+#!/usr/bin/env ruby
+
+exit((ARGV[0] || "0").to_i)
+    SHELLCOMMAND
   end
 
   def env_var
     windows? ? '%RAKE_TEST_SH%' : '$RAKE_TEST_SH'
+  end
+
+  def windows?
+    ! File::ALT_SEPARATOR.nil?
   end
 
 end

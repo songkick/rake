@@ -1,20 +1,12 @@
 require File.expand_path('../helper', __FILE__)
 
 class TestRakeApplication < Rake::TestCase
-  include InEnvironment
 
   def setup
     super
 
-    @app = Rake::Application.new
+    @app = Rake.application
     @app.options.rakelib = []
-    Rake::TaskManager.record_task_metadata = true
-  end
-
-  def teardown
-    Rake::TaskManager.record_task_metadata = false
-
-    super
   end
 
   def test_constant_warning
@@ -35,28 +27,30 @@ class TestRakeApplication < Rake::TestCase
   end
 
   def test_display_tasks_with_long_comments
-    in_environment('RAKE_COLUMNS' => '80') do
-      @app.options.show_tasks = :tasks
-      @app.options.show_task_pattern = //
-      @app.last_description = "1234567890" * 8
-      @app.define_task(Rake::Task, "t")
-      out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
-      assert_match(/^rake t/, out)
-      assert_match(/# 12345678901234567890123456789012345678901234567890123456789012345\.\.\./, out)
-    end
+    @app.terminal_columns = 80
+    @app.options.show_tasks = :tasks
+    @app.options.show_task_pattern = //
+    @app.last_description = "1234567890" * 8
+    @app.define_task(Rake::Task, "t")
+
+    out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
+
+    assert_match(/^rake t/, out)
+    assert_match(/# 12345678901234567890123456789012345678901234567890123456789012345\.\.\./, out)
   end
 
   def test_display_tasks_with_task_name_wider_than_tty_display
-    in_environment('RAKE_COLUMNS' => '80') do
-      @app.options.show_tasks = :tasks
-      @app.options.show_task_pattern = //
-      task_name = "task name" * 80
-      @app.last_description = "something short"
-      @app.define_task(Rake::Task, task_name )
-      out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
-      # Ensure the entire task name is output and we end up showing no description
-      assert_match(/rake #{task_name}  # .../, out)
-    end
+    @app.terminal_columns = 80
+    @app.options.show_tasks = :tasks
+    @app.options.show_task_pattern = //
+    task_name = "task name" * 80
+    @app.last_description = "something short"
+    @app.define_task(Rake::Task, task_name )
+
+    out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
+
+    # Ensure the entire task name is output and we end up showing no description
+    assert_match(/rake #{task_name}  # .../, out)
   end
 
   def test_display_tasks_with_very_long_task_name_to_a_non_tty_shows_name_and_comment
@@ -67,7 +61,9 @@ class TestRakeApplication < Rake::TestCase
     task_name = "task name" * 80
     @app.last_description = "something short"
     @app.define_task(Rake::Task, task_name )
+
     out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
+
     # Ensure the entire task name is output and we end up showing no description
     assert_match(/rake #{task_name}  # #{description}/, out)
   end
@@ -84,16 +80,17 @@ class TestRakeApplication < Rake::TestCase
   end
 
   def test_display_tasks_with_long_comments_to_a_non_tty_with_columns_set_truncates_comments
-    in_environment("RAKE_COLUMNS" => '80') do
-      @app.options.show_tasks = :tasks
-      @app.options.show_task_pattern = //
-      @app.tty_output = false
-      @app.last_description = "1234567890" * 8
-      @app.define_task(Rake::Task, "t")
-      out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
-      assert_match(/^rake t/, out)
-      assert_match(/# 12345678901234567890123456789012345678901234567890123456789012345\.\.\./, out)
-    end
+    @app.terminal_columns = 80
+    @app.options.show_tasks = :tasks
+    @app.options.show_task_pattern = //
+    @app.tty_output = false
+    @app.last_description = "1234567890" * 8
+    @app.define_task(Rake::Task, "t")
+
+    out, = capture_io do @app.instance_eval { display_tasks_and_comments } end
+
+    assert_match(/^rake t/, out)
+    assert_match(/# 12345678901234567890123456789012345678901234567890123456789012345\.\.\./, out)
   end
 
   def test_describe_tasks
@@ -117,6 +114,8 @@ class TestRakeApplication < Rake::TestCase
   end
 
   def test_finding_rakefile
+    rakefile_default
+
     assert_match(/Rakefile/i, @app.instance_eval { have_rakefile })
   end
 
@@ -127,108 +126,144 @@ class TestRakeApplication < Rake::TestCase
   end
 
   def test_load_rakefile
-    in_environment("PWD" => "test/data/unittest") do
-      @app.instance_eval do
-        handle_options
-        options.silent = true
-        load_rakefile
-      end
-      assert_equal "rakefile", @app.rakefile.downcase
-      assert_match(%r(unittest$), Dir.pwd)
+    rakefile_unittest
+
+    @app.instance_eval do
+      handle_options
+      options.silent = true
+      load_rakefile
     end
+
+    assert_equal "rakefile", @app.rakefile.downcase
+    assert_equal @tempdir, Dir.pwd
   end
 
   def test_load_rakefile_doesnt_print_rakefile_directory_from_same_dir
-    in_environment("PWD" => "test/data/unittest") do
-      _, err = capture_io do
-        @app.instance_eval do
-          @original_dir = File.expand_path(".") # pretend we started from the unittest dir
-          raw_load_rakefile
-        end
+    rakefile_unittest
+
+    _, err = capture_io do
+      @app.instance_eval do
+        # pretend we started from the unittest dir
+        @original_dir = File.expand_path(".")
+        raw_load_rakefile
       end
-      _, location = @app.find_rakefile_location
-      refute_match(/\(in #{location}\)/, err)
     end
+
+    assert_empty err
   end
 
   def test_load_rakefile_from_subdir
-    in_environment("PWD" => "test/data/unittest/subdir") do
-      @app.instance_eval do
-        handle_options
-        options.silent = true
-        load_rakefile
-      end
-      assert_equal "rakefile", @app.rakefile.downcase
-      assert_match(%r(unittest$), Dir.pwd)
+    rakefile_unittest
+    Dir.chdir 'subdir'
+
+    @app.instance_eval do
+      handle_options
+      options.silent = true
+      load_rakefile
     end
+
+    assert_equal "rakefile", @app.rakefile.downcase
+    assert_equal @tempdir, Dir.pwd
   end
 
   def test_load_rakefile_prints_rakefile_directory_from_subdir
-    in_environment("PWD" => "test/data/unittest/subdir") do
-      _, err = capture_io do
-        @app.instance_eval do
-          raw_load_rakefile
-        end
+    rakefile_unittest
+    Dir.chdir 'subdir'
+
+    app = Rake::Application.new
+    app.options.rakelib = []
+
+    _, err = capture_io do
+      app.instance_eval do
+        raw_load_rakefile
       end
-      _, location = @app.find_rakefile_location
-      assert_match(/\(in #{location}\)/, err)
     end
+
+    assert_equal "(in #{@tempdir}\)\n", err
   end
 
   def test_load_rakefile_doesnt_print_rakefile_directory_from_subdir_if_silent
-    in_environment("PWD" => "test/data/unittest/subdir") do
-      _, err = capture_io do
-        @app.instance_eval do
-          handle_options
-          options.silent = true
-          raw_load_rakefile
-        end
+    rakefile_unittest
+    Dir.chdir 'subdir'
+
+    _, err = capture_io do
+      @app.instance_eval do
+        handle_options
+        options.silent = true
+        raw_load_rakefile
       end
-      _, location = @app.find_rakefile_location
-      refute_match(/\(in #{location}\)/, err)
     end
+
+    assert_empty err
   end
 
   def test_load_rakefile_not_found
-    in_environment("PWD" => "/", "RAKE_SYSTEM" => 'not_exist') do
-      @app.instance_eval do
-        handle_options
-        options.silent = true
-      end
-      ex = assert_raises(RuntimeError) do
-        @app.instance_eval do raw_load_rakefile end
-      end
-      assert_match(/no rakefile found/i, ex.message)
+    Dir.chdir @tempdir
+    ENV['RAKE_SYSTEM'] = 'not_exist'
+
+    @app.instance_eval do
+      handle_options
+      options.silent = true
     end
+
+    ex = assert_raises(RuntimeError) do
+      @app.instance_eval do raw_load_rakefile end
+    end
+
+    assert_match(/no rakefile found/i, ex.message)
   end
 
   def test_load_from_system_rakefile
-    in_environment('RAKE_SYSTEM' => 'test/data/sys') do
-      @app.options.rakelib = []
-      @app.instance_eval do
-        handle_options
-        options.silent = true
-        options.load_system = true
-        options.rakelib = []
-        load_rakefile
-      end
-      assert_equal "test/data/sys", @app.system_dir
-      assert_nil @app.rakefile
+    rake_system_dir
+
+    @app.instance_eval do
+      handle_options
+      options.silent = true
+      options.load_system = true
+      options.rakelib = []
+      load_rakefile
     end
+
+    assert_equal @system_dir, @app.system_dir
+    assert_nil @app.rakefile
+  rescue SystemExit
+    flunk 'failed to load rakefile'
   end
 
   def test_load_from_calculated_system_rakefile
-    flexmock(@app, :standard_system_dir => "__STD_SYS_DIR__")
-    in_environment('RAKE_SYSTEM' => nil) do
-      @app.options.rakelib = []
-      @app.instance_eval do
-        handle_options
-        options.silent = true
-        options.load_system = true
-        options.rakelib = []
-        load_rakefile
-      end
-      assert_equal "__STD_SYS_DIR__", @app.system_dir
+    rakefile_default
+    def @app.standard_system_dir
+      "__STD_SYS_DIR__"
+    end
+
+    ENV['RAKE_SYSTEM'] = nil
+
+    @app.instance_eval do
+      handle_options
+      options.silent = true
+      options.load_system = true
+      options.rakelib = []
+      load_rakefile
+    end
+
+    assert_equal "__STD_SYS_DIR__", @app.system_dir
+  rescue SystemExit
+    flunk 'failed to find system rakefile'
+  end
+
+  def test_terminal_columns
+    old_RAKE_COLUMNS = ENV['RAKE_COLUMNS']
+
+    ENV['RAKE_COLUMNS'] = '42'
+
+    app = Rake::Application.new
+
+    assert_equal 42, app.terminal_columns
+  ensure
+    if old_RAKE_COLUMNS then
+      ENV['RAKE_COLUMNS'].delete
+    else
+      ENV['RAKE_COLUMNS'] = old_RAKE_COLUMNS
     end
   end
 
@@ -237,25 +272,28 @@ class TestRakeApplication < Rake::TestCase
   end
 
   def test_loading_imports
-    mock = flexmock("loader")
-    mock.should_receive(:load).with("x.dummy").once
+    loader = util_loader
+
     @app.instance_eval do
-      add_loader("dummy", mock)
+      add_loader("dummy", loader)
       add_import("x.dummy")
       load_imports
     end
+
+    # HACK no assertions
   end
 
   def test_building_imported_files_on_demand
-    mock = flexmock("loader")
-    mock.should_receive(:load).with("x.dummy").once
-    mock.should_receive(:make_dummy).with_no_args.once
+    loader = util_loader
+
     @app.instance_eval do
-      intern(Rake::Task, "x.dummy").enhance do mock.make_dummy end
-        add_loader("dummy", mock)
+      intern(Rake::Task, "x.dummy").enhance do loader.make_dummy end
+      add_loader("dummy", loader)
       add_import("x.dummy")
       load_imports
     end
+
+    # HACK no assertions
   end
 
   def test_handle_options_should_strip_options_from_ARGV
@@ -273,16 +311,24 @@ class TestRakeApplication < Rake::TestCase
 
   def test_good_run
     ran = false
-    ARGV.clear
+
     ARGV << '--rakelib=""'
+
     @app.options.silent = true
+
     @app.instance_eval do
       intern(Rake::Task, "default").enhance { ran = true }
     end
-    in_environment("PWD" => "test/data/default") do
+
+    rakefile_default
+
+    out, err = capture_io do
       @app.run
     end
+
     assert ran
+    assert_empty err
+    assert_equal "DEFAULT\n", out
   end
 
   def test_display_task_run
@@ -365,14 +411,93 @@ class TestRakeApplication < Rake::TestCase
   end
 
   def test_deprecation_message
-    in_environment do
-      _, err = capture_io do
-        @app.deprecate("a", "b", "c")
-      end
-      assert_match(/'a' is deprecated/i, err)
-      assert_match(/use 'b' instead/i, err)
-      assert_match(/at c$/i, err)
+    _, err = capture_io do
+      @app.deprecate("a", "b", "c")
     end
+    assert_match(/'a' is deprecated/i, err)
+    assert_match(/use 'b' instead/i, err)
+    assert_match(/at c$/i, err)
   end
+
+  def test_standard_exception_handling_invalid_option
+    out, err = capture_io do
+      e = assert_raises SystemExit do
+        @app.standard_exception_handling do
+          raise OptionParser::InvalidOption, 'blah'
+        end
+      end
+
+      assert_equal 1, e.status
+    end
+
+    assert_empty out
+    assert_equal "invalid option: blah\n", err
+  end
+
+  def test_standard_exception_handling_other
+    out, err = capture_io do
+      e = assert_raises SystemExit do
+        @app.standard_exception_handling do
+          raise 'blah'
+        end
+      end
+
+      assert_equal 1, e.status
+    end
+
+    assert_empty out
+    assert_match "rake aborted!\n", err
+    assert_match "blah\n", err
+  end
+
+  def test_standard_exception_handling_system_exit
+    out, err = capture_io do
+      e = assert_raises SystemExit do
+        @app.standard_exception_handling do
+          exit 0
+        end
+      end
+
+      assert_equal 0, e.status
+    end
+
+    assert_empty out
+    assert_empty err
+  end
+
+  def test_standard_exception_handling_system_exit_nonzero
+    out, err = capture_io do
+      e = assert_raises SystemExit do
+        @app.standard_exception_handling do
+          exit 5
+        end
+      end
+
+      assert_equal 5, e.status
+    end
+
+    assert_empty out
+    assert_empty err
+  end
+
+  def util_loader
+    loader = Object.new
+
+    loader.instance_variable_set :@load_called, false
+    def loader.load arg
+      raise 'called more than once' if @load_called
+      raise ArgumentError, arg unless arg == 'x.dummy'
+      @load_called = true
+    end
+
+    loader.instance_variable_set :@make_dummy_called, false
+    def loader.make_dummy
+      raise 'called more than once' if @make_dummy_called
+      @make_dummy_called = true
+    end
+
+    loader
+  end
+
 end
 
